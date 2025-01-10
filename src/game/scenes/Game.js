@@ -10,6 +10,7 @@ class Game extends Phaser.Scene {
         this.load.image("cardBack2", "assets/cards/card-back2.png");
         this.load.image("cardBack3", "assets/cards/card-back3.png");
         this.load.image("cardBack4", "assets/cards/card-back4.png");
+        this.load.image("altar", "assets/altar.png");
 
         // Load all cards dynamically
         const suits = ["clubs", "diamonds", "hearts", "spades"];
@@ -40,37 +41,46 @@ class Game extends Phaser.Scene {
 
         // Draw 4 random cards with animation
         this.time.delayedCall(500, () => {
-            this.drawCards(4, { x: this.scale.width / 2, y: this.scale.height / 2 });
+            this.drawCards(4, { x: this.scale.width / 2, y: this.scale.height / 2 }, () => {
+                this.showAltar();
+            });
         });
     }
 
-    drawCards(numCards, centerPosition) {
+    drawCards(numCards, centerPosition, onComplete) {
         const suits = ["clubs", "diamonds", "hearts", "spades"];
         const targetY = this.scale.height - 10; // Touch the bottom of the screen
 
-        // Get the existing cards in the hand to calculate their positions
+        // Get the existing cards in the hand
         const handCards = this.children.list.filter(
             (child) => child.texture && child.texture.key.startsWith("card-")
         );
 
-        // Calculate dynamic spacing based on the total number of cards in hand
+        // Prevent drawing more cards if the hand already has 5 cards
+        if (handCards.length >= 5) {
+            this.showCardLimitMessage(); // Display the message when max cards are reached
+            return;
+        }
+
+        // Calculate the total number of cards after adding new ones
         const totalCards = handCards.length + numCards;
+
+        // Define spacing and calculate the starting X position for the new hand
         const maxSpacing = 50; // Maximum spacing between cards
         const minSpacing = 20; // Minimum spacing between cards
         const spacing = Math.max(minSpacing, maxSpacing - (totalCards - 1) * 2);
-
-        // Calculate startX so the hand remains centered
         const startX = centerPosition.x - ((spacing * (totalCards - 1)) / 2);
 
-        // Adjust positions of existing cards in the hand
+        // Animate existing cards to their new positions
         handCards.forEach((card, index) => {
             const targetX = startX + spacing * index;
+
             this.tweens.add({
                 targets: card,
                 x: targetX,
                 y: targetY,
                 scale: 1.2,
-                duration: 1000,
+                duration: 500,
                 ease: "Power2",
             });
         });
@@ -80,15 +90,14 @@ class Game extends Phaser.Scene {
             const suit = Phaser.Math.RND.pick(suits);
             const rank = Phaser.Math.Between(1, 13);
             const cardKey = `card-${suit}-${rank}`;
-			
 
-            // Calculate the position of the new card based on its index
+            // Calculate the position of the new card
             const index = handCards.length + i;
             const targetX = startX + spacing * index;
 
             const card = this.add.image(centerPosition.x, centerPosition.y, cardKey).setScale(1).setDepth(10 + index);
 
-            // Animate the card moving to its position in the hand
+            // Animate the new card moving to its position
             this.tweens.add({
                 targets: card,
                 x: targetX,
@@ -98,9 +107,34 @@ class Game extends Phaser.Scene {
                 ease: "Power2",
                 onComplete: () => {
                     this.addCardInteractions(card, index, startX, spacing, targetY);
+                    if (i === numCards - 1 && onComplete) onComplete();
                 },
             });
         }
+    }
+
+    showAltar() {
+        const holeX = this.scale.width / 2;
+        const holeY = this.scale.height / 2;
+        const holeRadius = Math.min(this.scale.width, this.scale.height) * 0.15;
+
+        // Create the altar sprite
+        const altar = this.add.image(holeX, holeY, "altar")
+            .setScale(0) // Start very small
+            .setAlpha(0) // Start invisible
+            .setDepth(20); // Ensure it's above the hole
+
+        // Tween to make the altar appear and grow as if coming out of the hole
+        this.tweens.add({
+            targets: altar,
+            alpha: 1, // Fade in slowly
+            scale: holeRadius / altar.width, // Set max scale relative to the hole size
+            duration: 2000, // Slow fade-in duration
+            ease: "Power2",
+            onComplete: () => {
+                
+            },
+        });
     }
 
     addCardInteractions(card, index, startX, spacing, targetY) {
@@ -142,6 +176,43 @@ class Game extends Phaser.Scene {
         });
     }
 
+    showCardLimitMessage() {
+        // Check if the limit message is already shown, to avoid duplicates
+        const existingMessage = this.children.list.find(child => child && child.type === 'Text' && child.text === "Maximum hand size reached");
+        if (existingMessage) return;
+
+        // Create a message when the player reaches the maximum hand size
+        const message = this.add.text(this.scale.width / 2, this.scale.height / 2, "Maximum hand size reached", {
+            font: "20px Arial",
+            fill: "#FF0000",
+            backgroundColor: "#FFFFFF",
+            padding: { x: 10, y: 5 },
+            align: "center",
+        })
+        .setOrigin(0.5)
+        .setDepth(30)
+        .setAlpha(0);  // Start with invisible text
+
+        // Tween the message to fade in and out after 1.5 seconds
+        this.tweens.add({
+            targets: message,
+            alpha: 1,  // Fade in
+            duration: 500,
+            ease: "Power2",
+            onComplete: () => {
+                // Fade out after 1.5 seconds
+                this.time.delayedCall(1000, () => {
+                    this.tweens.add({
+                        targets: message,
+                        alpha: 0,  // Fade out
+                        duration: 500,
+                        ease: "Power2",
+                    });
+                });
+            }
+        });
+    }
+
     editorCreate() {
         const table = this.add.image(this.scale.width / 2, this.scale.height / 2, "pokerTable");
         table.setDisplaySize(this.scale.width, this.scale.height);
@@ -157,6 +228,8 @@ class Game extends Phaser.Scene {
         const holeOverlay = this.add.graphics();
         holeOverlay.fillStyle(0x000000, 1);
         holeOverlay.fillCircle(this.scale.width / 2, this.scale.height / 2, Math.min(this.scale.width, this.scale.height) * 0.1);
+
+        this.holeMask = mask;
     }
 
     addRotatingCardsInsideHole({ holeX, holeY, holeRadius, numCards, rotationSpeed, cardTexture }) {
@@ -183,6 +256,13 @@ class Game extends Phaser.Scene {
                 const handCards = this.children.list.filter(
                     (child) => child.texture && child.texture.key.startsWith("card-")
                 );
+
+                // Prevent drawing more cards if the hand already has 5 cards
+                if (handCards.length >= 5) {
+                    console.log("Cannot draw more cards. Maximum hand size reached.");
+                    this.showCardLimitMessage();
+                    return;
+                }
 
                 const spacing = 50; // Same spacing as other cards in the hand
                 const startX = this.scale.width / 2 - (spacing * handCards.length) / 2;
