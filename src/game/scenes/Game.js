@@ -11,6 +11,7 @@ class Game extends Phaser.Scene {
         this.load.image("cardBack3", "assets/cards/card-back3.png");
         this.load.image("cardBack4", "assets/cards/card-back4.png");
         this.load.image("altar", "assets/altar.png");
+        this.load.image("particle", "assets/particle.png");
 
         // Load all cards dynamically
         const suits = ["clubs", "diamonds", "hearts", "spades"];
@@ -24,6 +25,9 @@ class Game extends Phaser.Scene {
     create() {
         console.log("Creating the scene...");
         this.editorCreate();
+
+         // Enable input system (optional step for debugging or assurance)
+        this.input.enabled = true;
 
         // Choose a random card back texture
         const cardTextures = ["cardBack", "cardBack2", "cardBack3", "cardBack4"];
@@ -53,7 +57,9 @@ class Game extends Phaser.Scene {
 
         // Get the existing cards in the hand
         const handCards = this.children.list.filter(
-            (child) => child.texture && child.texture.key.startsWith("card-")
+            (child) => child.texture && child.texture.key.startsWith("card-") &&
+            Math.abs(child.y - targetY) < 10 && // Ensure it's in the hand's position
+        child.depth < 50 // Exclude cards that have been thrown (higher depth indicates altar stack)
         );
 
         // Prevent drawing more cards if the hand already has 5 cards
@@ -113,68 +119,153 @@ class Game extends Phaser.Scene {
         }
     }
 
-    showAltar() {
-        const holeX = this.scale.width / 2;
-        const holeY = this.scale.height / 2;
-        const holeRadius = Math.min(this.scale.width, this.scale.height) * 0.15;
+// Display the altar in the center of the screen
+showAltar() {
+    const holeX = this.scale.width / 2;
+    const holeY = this.scale.height / 2;
+    const holeRadius = Math.min(this.scale.width, this.scale.height) * 0.15;
 
-        // Create the altar sprite
-        const altar = this.add.image(holeX, holeY, "altar")
-            .setScale(0) // Start very small
-            .setAlpha(0) // Start invisible
-            .setDepth(20); // Ensure it's above the hole
+    const altarWidth = holeRadius * 1.5;
+    const altarHeight = holeRadius * 1.2;
+    const shadowOffset = 10;
 
-        // Tween to make the altar appear and grow as if coming out of the hole
-        this.tweens.add({
-            targets: altar,
-            alpha: 1, // Fade in slowly
-            scale: holeRadius / altar.width, // Set max scale relative to the hole size
-            duration: 2000, // Slow fade-in duration
-            ease: "Power2",
-            onComplete: () => {
-                
-            },
-        });
-    }
+    let lastUpdateTime = 0;
+    const updateInterval = 100; // Update shadow every 100ms
 
-    addCardInteractions(card, index, startX, spacing, targetY) {
-        let hoveredCard = null; // Track the currently hovered card
+    // Create altar shadow
+    this.altarShadow = this.add.graphics()
+        .fillStyle(0xffffff, 0.1)
+        .fillRoundedRect(
+            holeX - altarWidth / 2 - shadowOffset,
+            holeY - altarHeight / 2,
+            altarWidth + shadowOffset * 2,
+            altarHeight,
+            10
+        )
+        .setDepth(15);
 
-        card.setOrigin(0.5, 1); // Adjust origin for proper positioning
-        card.setInteractive();
+    // Create altar image
+    this.altar = this.add.image(holeX, holeY, "altar")
+        .setScale(0)
+        .setAlpha(0)
+        .setDepth(20);
 
-        // Hover effect
-        card.on("pointerover", () => {
-            if (hoveredCard && hoveredCard !== card) {
-                hoveredCard.emit("pointerout"); // Reset the previously hovered card
+    // Create the glass effect
+    this.glassEffect = this.add.graphics()
+        .setDepth(19) // Ensure it is behind the altar but above the shadow
+        .fillStyle(0xffffff, 0.2) // Semi-transparent white
+        .fillCircle(holeX, holeY, 0); // Start with zero radius
+
+    // Animate altar and glass effect appearance
+    this.tweens.add({
+        targets: this.altar,
+        alpha: 1, // Fade in the altar
+        scale: holeRadius / this.altar.width, // Grow the altar
+        duration: 2000,
+        ease: "Power2",
+        onUpdate: (tween, progress) => {
+            const currentTime = this.time.now;
+            if (currentTime - lastUpdateTime > updateInterval) {
+                lastUpdateTime = currentTime;
+
+                const scale = tween.getValue();
+                this.altarShadow.clear();
+                this.altarShadow.fillStyle(0xffffff, 0.1);
+                this.altarShadow.fillRoundedRect(
+                    holeX - (altarWidth * scale) / 2 - shadowOffset * scale,
+                    holeY - (altarHeight * scale) / 2,
+                    altarWidth * scale + shadowOffset * 2 * scale,
+                    altarHeight * scale,
+                    10 * scale
+                );
+
+                // Update glass effect
+                this.glassEffect.clear();
+                this.glassEffect.fillStyle(0xffffff, 0.2);
+                this.glassEffect.fillCircle(holeX, holeY, scale * holeRadius * 0.9); // Ensure it's slightly smaller than the card radius
             }
-            hoveredCard = card;
-            card.setDepth(20); // Bring the card to the front
-            this.tweens.add({
-                targets: card,
-                scale: 1.4,
-                y: targetY - 50, // Move up on hover
-                duration: 200,
-                ease: "Power1",
-            });
-        });
+        }
+    });
+}
 
-        card.on("pointerout", () => {
-            if (hoveredCard === card) hoveredCard = null; // Clear the hovered card if it's this one
-            this.tweens.killTweensOf(card); // Stop any ongoing tweens
-            card.setDepth(10 + index); // Reset depth to original layer
 
-            const targetX = startX + spacing * index; // Recalculate correct position
-            this.tweens.add({
-                targets: card,
-                scale: 1.2, // Return to original size
-                x: targetX, // Reset the position to its initial layout
-                y: targetY, // Reset the position to its initial layout
-                duration: 200,
-                ease: "Power1",
-            });
+
+   addCardInteractions(card, index, startX, spacing, targetY) {
+    let hoveredCard = null;
+
+    card.setOrigin(0.5, 1); // Adjust origin for proper positioning
+    card.setInteractive();
+	card.movedToAltar = false; // Add a flag to track if the card has been moved to the altar
+console.log(`Card ${card.texture.key} is now interactive.`);
+
+    // Hover effect
+    card.on("pointerover", () => {
+		if (card.movedToAltar) return; // Ignore hover if the card is on the altar
+
+        if (hoveredCard && hoveredCard !== card) {
+            hoveredCard.emit("pointerout"); // Reset the previously hovered card
+        }
+        hoveredCard = card;
+        card.setDepth(20); // Bring the card to the front
+        this.tweens.add({
+            targets: card,
+            scale: 1.4,
+            y: targetY - 50, // Move up on hover
+            duration: 200,
+            ease: "Power1",
         });
-    }
+    });
+
+    card.on("pointerout", () => {
+		if (card.movedToAltar) return; // Ignore hover out if the card is on the altar
+
+        if (hoveredCard === card) hoveredCard = null; // Clear the hovered card if it's this one
+        this.tweens.killTweensOf(card); // Stop any ongoing tweens
+        card.setDepth(10 + index); // Reset depth to original layer
+
+        const targetX = startX + spacing * index; // Recalculate correct position
+        this.tweens.add({
+            targets: card,
+            scale: 1.2, // Return to original size
+            x: targetX, // Reset the position to its initial layout
+            y: targetY, // Reset the position to its initial layout
+            duration: 200,
+            ease: "Power1",
+        });
+    });
+
+    // Throw card to altar on click
+    card.on("pointerdown", () => {
+		card.removeAllListeners(); // Immediately stop hover and other events
+    console.log(`Card ${card.texture.key} clicked.`);
+    const altarX = this.scale.width / 2;
+    const altarY = this.scale.height / 1.71;
+
+    // Determine the stacking depth
+    const altarCards = this.children.list.filter(
+        (child) => child.texture && child.texture.key.startsWith("card-") && child.depth > 20
+    );
+    const stackDepth = 50 + altarCards.length;
+
+    // Animate card to move to the altar
+	card.setDepth(stackDepth); // Ensure stacking on the altar
+    this.tweens.add({
+        targets: card,
+        x: altarX,
+        y: altarY,
+        scale: 0.9, // Shrink card as it reaches altar
+        duration: 1000,
+        ease: "Power2",
+        onComplete: () => {
+            card.movedToAltar = true; // Mark the card as moved to the altar
+			card.x += Phaser.Math.Between(-4, 4); // Slight horizontal offset for stack effect
+            card.y += Phaser.Math.Between(-4, 4); // Slight vertical offset for stack effect
+            console.log(`Card ${card.texture.key} placed on altar at depth ${stackDepth}.`);
+        },
+    });
+    });
+}
+
 
     showCardLimitMessage() {
         // Check if the limit message is already shown, to avoid duplicates
