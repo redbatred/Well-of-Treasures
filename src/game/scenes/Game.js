@@ -11,6 +11,16 @@ class Game extends Phaser.Scene {
         this.load.image("cardBack3", "assets/cards/card-back3.png");
         this.load.image("cardBack4", "assets/cards/card-back4.png");
         this.load.image("altar", "assets/altar.png");
+		this.load.image("playAgainButton", "assets/new-game.png");
+		console.log("Loading Play Again button...");
+		this.load.audio("throwCard", "assets/sounds/Throw_sound.mp3");
+		this.load.audio("shuffleCards", "assets/sounds/GP_Shuffle.wav");
+		this.load.audio("drawSound", "assets/sounds/Draw_sound.mp3");
+		this.load.audio("buttonSound", "assets/sounds/Button_sound.mp3");
+		this.load.audio("soundtrack1", "assets/sounds/soundtrack1.wav");
+    this.load.audio("soundtrack2", "assets/sounds/soundtrack2.wav");
+		
+
   // Dynamically load all explosion frames
     for (let i = 29; i <= 84; i++) {
         this.load.image(`explosion_red_${i}`, `assets/particles/explosion_red_${i}.png`);
@@ -29,6 +39,29 @@ class Game extends Phaser.Scene {
     create() {
         console.log("Creating the scene...");
         this.editorCreate();
+
+		 this.sound.add("shuffleCards").play();
+
+		 // Randomly choose a soundtrack
+    const soundtrackKey = Phaser.Math.RND.pick(["soundtrack1", "soundtrack2"]);
+
+    // Add and play the chosen soundtrack
+    this.backgroundMusic = this.sound.add(soundtrackKey, {
+        volume: 0.5, // Set volume to 50%
+        loop: true,  // Enable looping
+    });
+
+    this.backgroundMusic.play();
+    console.log(`Playing ${soundtrackKey}`);
+
+		
+
+		// Create the CPU's hand
+        this.animateCPUHand(4); // Deal 5 cards to the CPU's hand
+
+		// Adjust the game scale dynamically
+        this.scale.on("resize", this.resizeGame, this);
+        this.resizeGame(this.scale.gameSize);
 
 		// Create the explosion animation
     const frames = [];
@@ -69,9 +102,49 @@ class Game extends Phaser.Scene {
         });
     }
 
+	    animateCPUHand(numCards) {
+        const suits = ["clubs", "diamonds", "hearts", "spades"];
+        const targetY = 50; // Align with the top of the screen
+
+        // Define spacing and calculate the starting X position for the CPU's hand
+        const maxSpacing = 50; // Maximum spacing between cards
+        const minSpacing = 20; // Minimum spacing between cards
+        const spacing = Math.max(minSpacing, maxSpacing - (numCards - 1) * 2);
+        const startX = this.scale.width / 2 - ((spacing * (numCards - 1)) / 2);
+
+        for (let i = 0; i < numCards; i++) {
+            const suit = Phaser.Math.RND.pick(suits);
+            const rank = Phaser.Math.Between(1, 13);
+            const cardKey = `card-${suit}-${rank}`;
+
+            // Create the card with the back texture and set its initial position at the pile
+            const pileX = this.scale.width / 2;
+            const pileY = this.scale.height / 2;
+            const card = this.add.image(pileX, pileY, "cardBack").setScale(1).setDepth(10 + i);
+
+            // Animate the card moving from the pile to its position at the top of the screen
+            this.tweens.add({
+                targets: card,
+                x: startX + spacing * i,
+                y: targetY,
+                duration: 1000,
+                ease: "Power2",
+                onComplete: () => {
+                    // Ensure the card is visible but flipped (hidden face)
+                    card.setAlpha(1); // Make the card visible
+                    card.setTexture("cardBack"); // Ensure it shows the card back
+                    console.log(`Card ${cardKey} dealt to CPU's hand.`);
+				
+                },
+            });
+        }
+    }
+
     drawCards(numCards, centerPosition, onComplete) {
         const suits = ["clubs", "diamonds", "hearts", "spades"];
-        const targetY = this.scale.height - 10; // Touch the bottom of the screen
+        const targetY = this.scale.height - 0; // Touch the bottom of the screen
+		
+		
 
         // Get the existing cards in the hand
         const handCards = this.children.list.filter(
@@ -120,6 +193,8 @@ this.tweens.add({
             const suit = Phaser.Math.RND.pick(suits);
             const rank = Phaser.Math.Between(1, 13);
             const cardKey = `card-${suit}-${rank}`;
+			
+			
 
             // Calculate the position of the new card
             const index = handCards.length + i;
@@ -135,9 +210,17 @@ this.tweens.add({
                 scale: 1.2,
                 duration: 1000,
                 ease: "Power2",
+
+				onStart: () => {
+                    // Play the throw card sound
+                    this.sound.play("drawSound");
+                },
+				
+				
                 onComplete: () => {
                     this.addCardInteractions(card, index, startX, spacing, targetY);
                     if (i === numCards - 1 && onComplete) onComplete();
+					
 
 					
 
@@ -298,11 +381,16 @@ addCardInteractions(card, index, startX, spacing, targetY) {
                 scale: 0.9, // Shrink card as it reaches altar
                 duration: 1000,
                 ease: "Power2",
+				onStart: () => {
+                    // Play the throw card sound
+                    this.sound.play("throwCard");
+                },
                 onComplete: () => {
                     card.movedToAltar = true; // Mark the card as moved to the altar
                     card.x += Phaser.Math.Between(-4, 4); // Slight horizontal offset for stack effect
                     card.y += Phaser.Math.Between(-4, 4); // Slight vertical offset for stack effect
                     console.log(`Card ${card.texture.key} placed on altar at depth ${stackDepth}.`);
+					
 
                     // Update the last card on the altar
                     this.lastCardOnAltar = card;
@@ -398,17 +486,84 @@ if (handCards.length === 0) {
         });
     }
 
-    // Optional: Fade out the "You Win" message after all explosions
+    // Fade out the "You Win" message after all explosions
     this.time.delayedCall(3000, () => {
         this.tweens.add({
             targets: winText,
             alpha: 0,
             duration: 1000,
             ease: "Power2",
-            onComplete: () => winText.destroy(),
+            onComplete: () => {
+			console.log("Win message faded out.");
+			winText.destroy();
+			 this.showPlayAgainButton();
+			}
         });
     });
 }
+
+    showPlayAgainButton() {
+        const { width, height } = this.scale;
+
+        // Create the Play Again button
+        const playAgainButton = this.add.image(width - 10, height - 10, "playAgainButton")
+            .setOrigin(1, 1) // Align bottom-right corner
+            .setScale(0.5)
+            .setInteractive()
+            .setDepth(101)
+            .setAlpha(0); // Start invisible
+
+        // Add hover effect
+        playAgainButton.on("pointerover", () => {
+            playAgainButton.setScale(0.6); // Enlarge button on hover
+        });
+
+        playAgainButton.on("pointerout", () => {
+            playAgainButton.setScale(0.5); // Reset button size on hover out
+        });
+
+        // Fade in the button
+        this.tweens.add({
+            targets: playAgainButton,
+            alpha: 1,
+            duration: 1000,
+            ease: "Power2",
+        });
+
+        // Add interaction to restart the game
+        playAgainButton.on("pointerdown", () => {
+            this.scene.restart(); // Restart the scene
+			
+              
+                    this.sound.play("buttonSound");
+                
+        });
+
+        // Adjust button position on resize
+        this.scale.on("resize", (gameSize) => {
+            const { width, height } = gameSize;
+            playAgainButton.setPosition(width - 10, height - 10);
+        });
+    }
+
+	 resizeGame(gameSize) {
+        const { width, height } = gameSize;
+
+        // Adjust the background
+        const background = this.children.list.find(child => child.texture && child.texture.key === "pokerTable");
+        if (background) {
+            background.setDisplaySize(width, height);
+        }
+
+        // Adjust other game objects if necessary
+        this.children.list.forEach(child => {
+            if (child.originalX !== undefined && child.originalY !== undefined) {
+                child.x = (child.originalX / this.scale.width) * width;
+                child.y = (child.originalY / this.scale.height) * height;
+            }
+        });
+    }
+
 
 
 
@@ -521,6 +676,11 @@ card.on("pointerdown", () => {
             scale: 1.2,
             duration: 500,
             ease: "Power2",
+			 onStart: () => {
+                // Play the draw card sound when the animation starts
+              
+                    this.sound.play("drawSound");
+                },
             onComplete: () => {
                 handCard.currentX = targetX; // Store the current position for hover effects
                 handCard.currentY = targetY;
