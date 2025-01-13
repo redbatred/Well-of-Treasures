@@ -11,7 +11,11 @@ class Game extends Phaser.Scene {
         this.load.image("cardBack3", "assets/cards/card-back3.png");
         this.load.image("cardBack4", "assets/cards/card-back4.png");
         this.load.image("altar", "assets/altar.png");
-        this.load.image("particle", "assets/particle.png");
+  // Dynamically load all explosion frames
+    for (let i = 29; i <= 84; i++) {
+        this.load.image(`explosion_red_${i}`, `assets/particles/explosion_red_${i}.png`);
+    }
+
 
         // Load all cards dynamically
         const suits = ["clubs", "diamonds", "hearts", "spades"];
@@ -25,6 +29,20 @@ class Game extends Phaser.Scene {
     create() {
         console.log("Creating the scene...");
         this.editorCreate();
+
+		// Create the explosion animation
+    const frames = [];
+    for (let i = 29; i <= 84; i++) {
+        frames.push({ key: `explosion_red_${i}` });
+    }
+
+    this.anims.create({
+        key: "explosion",
+        frames: frames,
+        frameRate: 30, // Adjust to control animation speed (frames per second)
+        repeat: 0, // No repeat
+    });
+
 
          // Enable input system (optional step for debugging or assurance)
         this.input.enabled = true;
@@ -318,10 +336,81 @@ addCardInteractions(card, index, startX, spacing, targetY) {
                             },
                         });
                     });
+
+if (handCards.length === 0) {
+    this.showWinEffect(); // Trigger the win effect
+}
+
+
                 },
             });
         });
     }
+
+	showWinEffect() {
+    const { width, height } = this.scale;
+
+    // Display the "You Win" message on top
+    const winText = this.add.text(width / 2, height / 2, "You Win!", {
+        font: "64px Arial",
+        fill: "#ffcc00",
+        stroke: "#000000",
+        strokeThickness: 6,
+    })
+        .setOrigin(0.5)
+        .setDepth(100) // Ensure it's above everything
+        .setAlpha(0); // Start invisible for fade-in effect
+
+    // Fade in the "You Win" message
+    this.tweens.add({
+        targets: winText,
+        alpha: 1,
+        duration: 1000, // Fade-in duration
+        ease: "Power2",
+    });
+
+    // Function to create an explosion at a specific position
+    const createExplosion = (x, y) => {
+        const explosion = this.add.sprite(x, y, `explosion_red_29`)
+            .setScale(5) // Scale up the explosion
+            .setDepth(99); // Ensure it's below the message
+
+        explosion.play("explosion");
+
+        // Slow down the explosion for a longer duration
+        explosion.anims.timeScale = 0.5; // Reduce playback speed to half
+
+        // Destroy the sprite after the animation completes
+        explosion.on("animationcomplete", () => {
+            explosion.destroy();
+        });
+    };
+
+    // Generate multiple explosions at random positions
+    const numExplosions = 10; // Number of explosions
+    for (let i = 0; i < numExplosions; i++) {
+        const randomX = Phaser.Math.Between(50, width - 50); // Avoid edges
+        const randomY = Phaser.Math.Between(50, height - 50); // Avoid edges
+
+        // Delay each explosion slightly for a staggered effect
+        this.time.delayedCall(i * 200, () => {
+            createExplosion(randomX, randomY);
+        });
+    }
+
+    // Optional: Fade out the "You Win" message after all explosions
+    this.time.delayedCall(3000, () => {
+        this.tweens.add({
+            targets: winText,
+            alpha: 0,
+            duration: 1000,
+            ease: "Power2",
+            onComplete: () => winText.destroy(),
+        });
+    });
+}
+
+
 
 
 
