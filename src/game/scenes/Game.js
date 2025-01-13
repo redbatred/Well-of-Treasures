@@ -201,113 +201,128 @@ showAltar() {
 
 
 addCardInteractions(card, index, startX, spacing, targetY) {
-    let hoveredCard = null;
+        let hoveredCard = null;
 
-    // Set initial current position
-    card.currentX = startX + spacing * index;
-    card.currentY = targetY;
+        // Set initial current position
+        card.currentX = startX + spacing * index;
+        card.currentY = targetY;
 
-    card.setOrigin(0.5, 1); // Adjust origin for proper positioning
-    card.setInteractive();
-    card.movedToAltar = false; // Add a flag to track if the card has been moved to the altar
-    console.log(`Card ${card.texture.key} is now interactive.`);
+        card.setOrigin(0.5, 1); // Adjust origin for proper positioning
+        card.setInteractive();
+        card.movedToAltar = false; // Add a flag to track if the card has been moved to the altar
+        console.log(`Card ${card.texture.key} is now interactive.`);
 
-    // Hover effect
-    card.on("pointerover", () => {
-        if (card.movedToAltar || !card.input.enabled) return; // Ignore hover if disabled or on altar
+        // Hover effect
+        card.on("pointerover", () => {
+            if (card.movedToAltar || !card.input.enabled) return; // Ignore hover if disabled or on altar
 
-        if (hoveredCard && hoveredCard !== card) {
-            hoveredCard.emit("pointerout"); // Reset the previously hovered card
-        }
-        hoveredCard = card;
-        card.setDepth(20); // Bring the card to the front
-        this.tweens.add({
-            targets: card,
-            scale: 1.4,
-            y: card.currentY - 50, // Move up on hover
-            duration: 200,
-            ease: "Power1",
+            if (hoveredCard && hoveredCard !== card) {
+                hoveredCard.emit("pointerout"); // Reset the previously hovered card
+            }
+            hoveredCard = card;
+            card.setDepth(20); // Bring the card to the front
+            this.tweens.add({
+                targets: card,
+                scale: 1.4,
+                y: card.currentY - 50, // Move up on hover
+                duration: 200,
+                ease: "Power1",
+            });
         });
-    });
 
-    card.on("pointerout", () => {
-        if (card.movedToAltar || !card.input.enabled) return; // Ignore hover out if disabled or on altar
+        card.on("pointerout", () => {
+            if (card.movedToAltar || !card.input.enabled) return; // Ignore hover out if disabled or on altar
 
-        if (hoveredCard === card) hoveredCard = null; // Clear the hovered card if it's this one
-        this.tweens.killTweensOf(card); // Stop any ongoing tweens
-        card.setDepth(10 + index); // Reset depth to original layer
+            if (hoveredCard === card) hoveredCard = null; // Clear the hovered card if it's this one
+            this.tweens.killTweensOf(card); // Stop any ongoing tweens
+            card.setDepth(10 + index); // Reset depth to original layer
 
-        // Return to the stored current position
-        this.tweens.add({
-            targets: card,
-            scale: 1.2, // Return to original size
-            x: card.currentX, // Use the stored current position
-            y: card.currentY, // Use the stored current position
-            duration: 200,
-            ease: "Power1",
+            // Return to the stored current position
+            this.tweens.add({
+                targets: card,
+                scale: 1.2, // Return to original size
+                x: card.currentX, // Use the stored current position
+                y: card.currentY, // Use the stored current position
+                duration: 200,
+                ease: "Power1",
+            });
         });
-    });
 
-    card.on("pointerdown", () => {
-        card.removeAllListeners(); // Immediately stop hover and other events
-        console.log(`Card ${card.texture.key} clicked.`);
-        const altarX = this.scale.width / 2;
-        const altarY = this.scale.height / 1.71;
+        card.on("pointerdown", () => {
+            // Check if the card can be placed on the altar
+            if (this.lastCardOnAltar) {
+                const [lastSuit, lastRank] = this.lastCardOnAltar.texture.key.split("-").slice(1);
+                const [currentSuit, currentRank] = card.texture.key.split("-").slice(1);
 
-        // Determine the stacking depth
-        const altarCards = this.children.list.filter(
-            (child) => child.texture && child.texture.key.startsWith("card-") && child.depth > 20
-        );
-        const stackDepth = 50 + altarCards.length;
+                if (currentSuit !== lastSuit && currentRank !== lastRank) {
+                    console.log("Card does not match the altar's last card.");
+                    return; // Invalid move
+                }
+            }
 
-        // Animate card to move to the altar
-        card.setDepth(stackDepth); // Ensure stacking on the altar
-        this.tweens.add({
-            targets: card,
-            x: altarX,
-            y: altarY,
-            scale: 0.9, // Shrink card as it reaches altar
-            duration: 1000,
-            ease: "Power2",
-            onComplete: () => {
-                card.movedToAltar = true; // Mark the card as moved to the altar
-                card.x += Phaser.Math.Between(-4, 4); // Slight horizontal offset for stack effect
-                card.y += Phaser.Math.Between(-4, 4); // Slight vertical offset for stack effect
-                console.log(`Card ${card.texture.key} placed on altar at depth ${stackDepth}.`);
+            card.removeAllListeners(); // Stop hover and other events
+            console.log(`Card ${card.texture.key} clicked.`);
+            const altarX = this.scale.width / 2;
+            const altarY = this.scale.height / 1.71;
 
-                // Recalculate and animate the remaining cards in the hand
-                const handCards = this.children.list.filter(
-                    (child) => child.texture && child.texture.key.startsWith("card-") &&
-                    !child.movedToAltar
-                );
+            // Determine the stacking depth
+            const altarCards = this.children.list.filter(
+                (child) => child.texture && child.texture.key.startsWith("card-") && child.depth > 20
+            );
+            const stackDepth = 50 + altarCards.length;
 
-                const spacing = 50; // Maximum spacing between cards
-                const startX = this.scale.width / 2 - (spacing * (handCards.length - 1)) / 2;
-                const targetY = this.scale.height - 10;
+            // Animate card to move to the altar
+            card.setDepth(stackDepth); // Ensure stacking on the altar
+            this.tweens.add({
+                targets: card,
+                x: altarX,
+                y: altarY,
+                scale: 0.9, // Shrink card as it reaches altar
+                duration: 1000,
+                ease: "Power2",
+                onComplete: () => {
+                    card.movedToAltar = true; // Mark the card as moved to the altar
+                    card.x += Phaser.Math.Between(-4, 4); // Slight horizontal offset for stack effect
+                    card.y += Phaser.Math.Between(-4, 4); // Slight vertical offset for stack effect
+                    console.log(`Card ${card.texture.key} placed on altar at depth ${stackDepth}.`);
 
-                handCards.forEach((handCard, newIndex) => {
-                    const newTargetX = startX + spacing * newIndex;
+                    // Update the last card on the altar
+                    this.lastCardOnAltar = card;
 
-                    // Temporarily disable input
-                    handCard.input.enabled = false;
+                    // Recalculate and animate the remaining cards in the hand
+                    const handCards = this.children.list.filter(
+                        (child) => child.texture && child.texture.key.startsWith("card-") &&
+                        !child.movedToAltar
+                    );
 
-                    this.tweens.add({
-                        targets: handCard,
-                        x: newTargetX,
-                        y: targetY,
-                        duration: 500,
-                        ease: "Power2",
-                        onComplete: () => {
-                            handCard.currentX = newTargetX; // Update currentX
-                            handCard.currentY = targetY; // Update currentY
-                            handCard.input.enabled = true; // Re-enable input after animation
-                        },
+                    const spacing = 50; // Maximum spacing between cards
+                    const startX = this.scale.width / 2 - (spacing * (handCards.length - 1)) / 2;
+                    const targetY = this.scale.height - 10;
+
+                    handCards.forEach((handCard, newIndex) => {
+                        const newTargetX = startX + spacing * newIndex;
+
+                        // Temporarily disable input
+                        handCard.input.enabled = false;
+
+                        this.tweens.add({
+                            targets: handCard,
+                            x: newTargetX,
+                            y: targetY,
+                            duration: 500,
+                            ease: "Power2",
+                            onComplete: () => {
+                                handCard.currentX = newTargetX; // Update currentX
+                                handCard.currentY = targetY; // Update currentY
+                                handCard.input.enabled = true; // Re-enable input after animation
+                            },
+                        });
                     });
-                });
-            },
+                },
+            });
         });
-    });
-}
+    }
+
 
 
     showCardLimitMessage() {
